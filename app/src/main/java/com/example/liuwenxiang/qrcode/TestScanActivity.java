@@ -21,6 +21,9 @@ import com.paic.hyperion.core.hfqrcode.HFQRCodeConfig;
 import com.paic.hyperion.core.hfqrcode.HFQRCodeDelegate;
 import com.paic.hyperion.core.hfqrcode.HFQRCodeView;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+
 
 public class TestScanActivity extends Activity implements HFQRCodeDelegate {
 
@@ -62,6 +65,7 @@ public class TestScanActivity extends Activity implements HFQRCodeDelegate {
 //        config.mToolbarHeight = dp2px(this, 50);
         // 扫描框是否垂直居中，该属性为 true 时会忽略 mTopOffset 属性，默认值为 false
 //        config.mIsCenterVertical = true;
+        config.mTipTextMargin =dp2px(this, 30);
 
         config.mQRCodeTipText = "放入框内，自动扫描";
         config.mTipTextColor = getResources().getColor(R.color.colorPrimaryDark);
@@ -130,33 +134,70 @@ public class TestScanActivity extends Activity implements HFQRCodeDelegate {
 
     public void onClick(View v) {
 
-        if(v.getId() == R.id.my_qrcode){
+        if (v.getId() == R.id.my_qrcode) {
 //            startActivity(new Intent(this, TestGeneratectivity.class));
-        }else if (v.getId() == R.id.choose_qrcode_pic){
+        } else if (v.getId() == R.id.choose_qrcode_pic) {
             Intent innerIntent = new Intent(Intent.ACTION_GET_CONTENT); // "android.intent.action.GET_CONTENT"
-                innerIntent.setType("image/*");
-                Intent wrapperIntent = Intent.createChooser(innerIntent, "选择二维码图片");
-                startActivityForResult(wrapperIntent, IMAGE);
+            innerIntent.setType("image/*");
+            Intent wrapperIntent = Intent.createChooser(innerIntent, "选择二维码图片");
+            startActivityForResult(wrapperIntent, IMAGE);
         }
 
     }
 
+    private String getRealPathFromURI(Uri contentURI) {
+        String result;
+        Cursor cursor = getContentResolver().query(contentURI, null, null, null, null);
+        if (cursor == null) {
+            // Source is Dropbox or other similar local file path
+            result = contentURI.getPath();
+        } else {
+            cursor.moveToFirst();
+            int idx = cursor.getColumnIndex(MediaStore.Images.ImageColumns.DATA);
+            result = cursor.getString(idx);
+            cursor.close();
+        }
+
+        return result;
+    }
+
+    // 根据路径获得图片并压缩，返回bitmap用于显示
+    public static Bitmap getSmallBitmap(String filePath) {
+        final BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(filePath, options);
+        // Calculate inSampleSize
+        options.inSampleSize = calculateInSampleSize(options, 480, 800);
+        // Decode bitmap with inSampleSize set
+        options.inJustDecodeBounds = false;
+        return BitmapFactory.decodeFile(filePath, options);
+    }
+
+    //计算图片的缩放值
+    public static int calculateInSampleSize(BitmapFactory.Options options, int reqWidth, int reqHeight) {
+        final int height = options.outHeight;
+        final int width = options.outWidth;
+        int inSampleSize = 1;
+
+        if (height > reqHeight || width > reqWidth) {
+            final int heightRatio = Math.round((float) height / (float) reqHeight);
+            final int widthRatio = Math.round((float) width / (float) reqWidth);
+            inSampleSize = heightRatio < widthRatio ? heightRatio : widthRatio;
+        }
+        return inSampleSize;
+    }
+
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (resultCode == RESULT_OK) {
             switch (requestCode) {
                 case IMAGE:
                     // 获取选中图片的路径
-                    Cursor cursor = getContentResolver().query(intent.getData(), null, null, null, null);
-                    if (cursor.moveToFirst()) {
-                        photoPath = cursor.getString(cursor.getColumnIndex(MediaStore.Images.Media.DATA));
-                    }
-                    cursor.close();
-
-                    Log.d("*******", "pic:" + photoPath);
-
+                    Uri uri = data.getData();
+                    photoPath = getRealPathFromURI(uri);
+                    Log.d(TAG, "photoPath----------:" + photoPath);
                     // 同步解析本地图片二维码，耗时操作，请在子线程中调用。
-                    String result = HFQRCode.syncDecodeQRCode(BitmapFactory.decodeFile(photoPath));
+                    String result = HFQRCode.syncDecodeQRCode(getSmallBitmap(photoPath));
                     Toast.makeText(TestScanActivity.this, result, Toast.LENGTH_SHORT).show();
                     break;
                 default:
